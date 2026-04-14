@@ -2,12 +2,15 @@
 
 > terminal ui for switching claude code sessions
 
-A terminal replacement for the Claude Code desktop app's project sidebar.
+When you use Claude Code, every conversation is saved. Over time you build up
+dozens of them, scattered across all your projects.
 
-`claude-session` reads your local Claude Code session history (`~/.claude/projects/*/*.jsonl`),
-groups sessions by recency (**Today / Yesterday / This week / Older**), and lets
-you fuzzy-pick one with `fzf`. Selecting a row `cd`s into that project and runs
-`claude --resume <session>`.
+`claude-session` shows them all in one list — the most recent at the top,
+grouped by **today**, **yesterday**, **this week** and **older**. Each one
+gets a short AI-generated title so you can tell at a glance what it was about.
+
+Pick a row, hit enter, and you're back in that conversation right where you
+left off.
 
 ```
 Today      14:32  myapp/api                         Add JWT refresh token endpoint
