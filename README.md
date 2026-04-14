@@ -37,7 +37,9 @@ cd claude-session
 ./install.sh
 ```
 
-This symlinks `bin/claude-session` into `~/.local/bin/claude-session`. Override the target with
+This symlinks `bin/claude-session` into `~/.local/bin/claude-session` and installs
+a **`cs` shorthand** alongside it (skipped if you already have a `cs` binary or
+alias). Override the install target with
 `CLAUDE_SESSION_INSTALL_DIR=/usr/local/bin ./install.sh`.
 
 ### Homebrew / manual
@@ -47,13 +49,16 @@ your `PATH` and `chmod +x` it.
 
 ## Usage
 
+You can call the tool as either `claude-session` or the `cs` shorthand —
+they're identical.
+
 ```
-claude-session                 # open the picker
-claude-session envio           # only show sessions whose project path contains "envio"
-claude-session -y              # resume with --dangerously-skip-permissions
-claude-session -T              # skip AI titles for this run (use raw first message)
-claude-session -y indexer      # combine flags with a filter
-claude-session --help
+cs                 # open the picker
+cs envio           # only show sessions whose project path contains "envio"
+cs -y              # resume with --dangerously-skip-permissions
+cs -T              # skip AI titles for this run (use raw first message)
+cs -y indexer      # combine flags with a filter
+cs --help
 ```
 
 ### AI-generated titles

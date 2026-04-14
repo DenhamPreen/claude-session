@@ -16,6 +16,20 @@ for name in claude-session claude-session-title; do
   echo "Installed: $TARGET_DIR/$name -> $BIN_DIR/$name"
 done
 
+# Optional `cs` shorthand. Only install if the slot is free or already ours,
+# so we never clobber a user's existing `cs` binary or alias.
+SHORTHAND="$TARGET_DIR/cs"
+WANT_TARGET="$BIN_DIR/claude-session"
+if [ -L "$SHORTHAND" ] && [ "$(readlink "$SHORTHAND")" = "$WANT_TARGET" ]; then
+  echo "Shorthand: $SHORTHAND -> $WANT_TARGET (already installed)"
+elif [ -e "$SHORTHAND" ] || [ -L "$SHORTHAND" ]; then
+  echo "Note: '$SHORTHAND' already exists and points elsewhere — skipping 'cs' shorthand."
+  echo "      To install manually: ln -sf '$WANT_TARGET' '$SHORTHAND'"
+else
+  ln -s "$WANT_TARGET" "$SHORTHAND"
+  echo "Installed shorthand: $SHORTHAND -> $WANT_TARGET"
+fi
+
 case ":$PATH:" in
   *":$TARGET_DIR:"*) ;;
   *) echo "Note: $TARGET_DIR is not on your PATH. Add this to your shell rc:"
@@ -27,9 +41,9 @@ for dep in jq fzf claude; do
 done
 
 echo
-echo "Run:  claude-session            # pick a session"
-echo "      claude-session -y         # resume with --dangerously-skip-permissions"
-echo "      claude-session envio      # filter sessions whose cwd contains 'envio'"
+echo "Run:  claude-session            # pick a session  (or shorthand: cs)"
+echo "      cs -y                     # resume with --dangerously-skip-permissions"
+echo "      cs envio                  # filter sessions whose cwd contains 'envio'"
 echo
 echo "AI titles work out of the box (uses your local claude CLI auth)."
 echo "For always-fresh titles, also run: ./install-hook.sh"
