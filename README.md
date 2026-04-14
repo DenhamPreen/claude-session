@@ -12,13 +12,7 @@ gets a short AI-generated title so you can tell at a glance what it was about.
 Pick a row, hit enter, and you're back in that conversation right where you
 left off.
 
-```
-Today      14:32  myapp/api                         Add JWT refresh token endpoint
-Today      11:08  myapp/web                         Fix dark mode flicker on initial load
-Yesterday  16:45  scripts/deploy                    Migrate CI from CircleCI to GH Actions
-This week  09:12  notes/research                    Compare vector DB options for RAG
-Older      18:03  dotfiles                          Tidy up zsh prompt and aliases
-```
+![claude-session picker](docs/screenshot.png)
 
 ## Requirements
 
