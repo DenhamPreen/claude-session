@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# cproj — fuzzy picker over Claude Code sessions, grouped by recency.
+# https://github.com/denhampreen/cproj
+#
+# Reads ~/.claude/projects/*/*.jsonl, shows Today/Yesterday/This week/Older,
+# and resumes the selected session via `claude --resume`.
+#
+# Usage: cproj [-y|--yolo] [-T|--no-titles] [filter]
+#   filter          substring match against project cwd (optional)
+#   -y, --yolo      add --dangerously-skip-permissions when resuming
+#   -T, --no-titles disable AI title lookup/generation for this run
+#   -h, --help      show help
+#   -V, --version
+#
+# Env:
+#   CPROJ_SKIP_PERMISSIONS=1    same as --yolo (persistent opt-in)
+#   CPROJ_CLAUDE_BIN=claude     override the claude binary name/path
+#   CPROJ_PROJECTS_DIR          override ~/.claude/projects
+#   CPROJ_TITLE_MODEL           title generator model (default: haiku)
+#   CPROJ_CACHE_DIR             title cache location
+# AI-generated titles are produced via the local `claude` CLI (subscription
+# auth) in background after each run — no API key required.
+set -euo pipefail
+
+VERSION="0.2.0"
+PROJECTS_DIR="${CPROJ_PROJECTS_DIR:-$HOME/.claude/projects}"
+CLAUDE_BIN="${CPROJ_CLAUDE_BIN:-claude}"
+CACHE_DIR="${CPROJ_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/cproj}"
+CACHE_FILE="$CACHE_DIR/titles.tsv"
+YOLO="${CPROJ_SKIP_PERMISSIONS:-0}"
+USE_TITLES=1
+FILTER=""
+
+usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)      usage; exit 0 ;;
+    -V|--version)   echo "cproj $VERSION"; exit 0 ;;
+    -y|--yolo)      YOLO=1; shift ;;
+    -T|--no-titles) USE_TITLES=0; shift ;;
+    --)             shift; FILTER="${1:-}"; break ;;
+    -*)             echo "cproj: unknown flag: $1" >&2; exit 2 ;;
+    *)              FILTER="$1"; shift ;;
+  esac
+done
+
+need() { command -v "$1" >/dev/null || { echo "cproj: '$1' not found on PATH." >&2; exit 1; }; }
+need jq
+need fzf
+need "$CLAUDE_BIN"
+
+[ -d "$PROJECTS_DIR" ] || { echo "cproj: no projects dir at $PROJECTS_DIR" >&2; exit 1; }
+mkdir -p "$CACHE_DIR"; : >> "$CACHE_FILE"
+
+# Portable date.
+if date -v-1d +%Y-%m-%d >/dev/null 2>&1; then
+  today=$(date +%Y-%m-%d); yday=$(date -v-1d +%Y-%m-%d); week_ago=$(date -v-7d +%Y-%m-%d)
+else
+  today=$(date +%Y-%m-%d); yday=$(date -d 'yesterday' +%Y-%m-%d); week_ago=$(date -d '7 days ago' +%Y-%m-%d)
+fi
+
+# Emit one TSV row per session: <lastTs>\t<cwd>\t<sid>\t<file>\t<msgCount>\t<fallbackTitle>
+build_entries() {
+  shopt -s nullglob
+  local f
+  for f in "$PROJECTS_DIR"/*/*.jsonl; do
+    [ -f "$f" ] || continue
+    jq -sr --arg f "$f" '
+      [ .[]
+        | select(.type=="user")
+        | select(.isSidechain != true)
+        | select(.message.content | type == "string")
+        | select(.message.content | startswith("<") | not)
+      ] as $users
+      | if ($users|length) == 0 then empty else
+          [ ($users[-1].timestamp // $users[0].timestamp),
+            ($users[0].cwd // ""),
+            ($users[0].sessionId // ""),
+            $f,
+            ($users|length|tostring),
+            ($users[0].message.content | gsub("[\t\n\r]+"; " ") | .[0:140])
+          ] | @tsv
+        end
+    ' "$f" 2>/dev/null || true
+  done
+}
+
+entries=$(build_entries | sort -r)
+if [ -n "$FILTER" ]; then
+  entries=$(printf '%s\n' "$entries" | awk -F'\t' -v f="$FILTER" 'index($2, f)')
+fi
+[ -n "$entries" ] || { echo "cproj: no sessions found${FILTER:+ matching \"$FILTER\"}." >&2; exit 1; }
+
+# Path to the title generator (same dir as this script).
+TITLE_BIN="$(cd "$(dirname "$0")" && pwd)/cproj-title"
+
+# Enrich entries with cached titles in one awk pass. Awk loads the cache in
+# BEGIN, then for each entry: emits the display row to stdout, and emits any
+# stale (sid, file) pair to stderr for background regeneration. Avoids bash 4
+# associative arrays so this runs on macOS stock bash 3.2.
+stale_file=$(mktemp -t cproj.XXXXXX)
+trap 'rm -f "$stale_file"' EXIT
+
+enriched=$(printf '%s\n' "$entries" | awk -F'\t' -v OFS='\t' \
+  -v cache_file="$CACHE_FILE" -v use_titles="$USE_TITLES" '
+BEGIN {
+  if (use_titles == "1") {
+    while ((getline line < cache_file) > 0) {
+      n = split(line, p, "\t")
+      if (n >= 4) { TITLE[p[1]] = p[4]; MSGN[p[1]] = p[3] + 0 }
+    }
+    close(cache_file)
+  }
+}
+NF >= 6 {
+  ts=$1; cwd=$2; sid=$3; file=$4; msgn=$5+0; fallback=$6
+  title = (use_titles == "1" && (sid in TITLE) && TITLE[sid] != "") ? TITLE[sid] : fallback
+  print ts, cwd, sid, title
+  cachedN = (sid in MSGN) ? MSGN[sid] : 0
+  if (use_titles == "1" && msgn > cachedN) print sid "\t" file > "/dev/stderr"
+}' 2> "$stale_file")
+
+# Spawn background generators for stale/missing titles.
+if [ "$USE_TITLES" = "1" ] && [ -x "$TITLE_BIN" ] && [ -s "$stale_file" ]; then
+  while IFS=$'\t' read -r _sid file; do
+    [ -n "$file" ] || continue
+    ( "$TITLE_BIN" "$file" >/dev/null 2>&1 & ) </dev/null >/dev/null 2>&1
+  done < "$stale_file"
+fi
+
+formatted=$(printf '%s' "$enriched" | awk -F'\t' \
+  -v today="$today" -v yday="$yday" -v week="$week_ago" -v home="$HOME" '
+NF>=4 {
+  ts=$1; cwd=$2; sid=$3; title=$4
+  d=substr(ts,1,10); t=substr(ts,12,5)
+  if (d==today)      group="Today    "
+  else if (d==yday)  group="Yesterday"
+  else if (d>=week)  group="This week"
+  else               group="Older    "
+  display=cwd; sub(home, "~", display)
+  n=split(display, parts, "/")
+  short=(n>=2) ? parts[n-1]"/"parts[n] : display
+  printf "%s  %s  %-34s  %s\t%s\t%s\n", group, t, short, title, sid, cwd
+}')
+
+selected=$(printf '%s\n' "$formatted" | fzf \
+  --delimiter=$'\t' --with-nth=1 \
+  --header="Claude sessions — enter: resume  •  ctrl-c: cancel" \
+  --height=80% --reverse --border --no-sort)
+
+[ -n "$selected" ] || exit 0
+
+sid=$(printf '%s' "$selected" | awk -F'\t' '{print $2}')
+cwd=$(printf '%s' "$selected" | awk -F'\t' '{print $3}')
+
+[ -d "$cwd" ] || { echo "cproj: project cwd no longer exists: $cwd" >&2; exit 1; }
+cd "$cwd"
+
+args=(--resume "$sid")
+[ "$YOLO" = "1" ] && args+=(--dangerously-skip-permissions)
+exec "$CLAUDE_BIN" "${args[@]}"
