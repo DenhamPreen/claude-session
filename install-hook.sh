@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Opt-in: add a Claude Code Stop hook that refreshes cproj titles as sessions grow.
+# Opt-in: add a Claude Code Stop hook that refreshes claude-session titles as sessions grow.
 # Uses ~/.claude/settings.json. Idempotent — re-running is safe.
 set -euo pipefail
 
 command -v jq >/dev/null || { echo "install-hook: jq required" >&2; exit 1; }
 
-TITLE_BIN="$(cd "$(dirname "$0")" && pwd)/bin/cproj-title"
+TITLE_BIN="$(cd "$(dirname "$0")" && pwd)/bin/claude-session-title"
 [ -x "$TITLE_BIN" ] || { echo "install-hook: $TITLE_BIN not executable" >&2; exit 1; }
 
 SETTINGS="${CLAUDE_SETTINGS:-$HOME/.claude/settings.json}"
@@ -13,7 +13,7 @@ mkdir -p "$(dirname "$SETTINGS")"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 
 # Back up once per install.
-cp "$SETTINGS" "$SETTINGS.cproj.bak.$(date +%s)"
+cp "$SETTINGS" "$SETTINGS.claude-session.bak.$(date +%s)"
 
 CMD="$TITLE_BIN"
 

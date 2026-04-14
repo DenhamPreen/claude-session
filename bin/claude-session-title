@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
-# cproj-title — generate and cache an AI title for a Claude Code session.
-# https://github.com/denhampreen/cproj
+# claude-session-title — generate and cache an AI title for a Claude Code session.
+# https://github.com/denhampreen/claude-session
 #
 # Uses the local `claude` CLI (subscription auth) in headless, non-persistent
 # mode — no API key required, no extra session files created.
 #
 # Usage:
-#   cproj-title <transcript.jsonl>          # direct
-#   cproj-title                             # reads Stop-hook JSON from stdin
+#   claude-session-title <transcript.jsonl>          # direct
+#   claude-session-title                             # reads Stop-hook JSON from stdin
 #
 # Env:
-#   CPROJ_CLAUDE_BIN    override the `claude` binary (default: claude)
-#   CPROJ_TITLE_MODEL   default: haiku
-#   CPROJ_CACHE_DIR     default: ${XDG_CACHE_HOME:-~/.cache}/cproj
+#   CLAUDE_SESSION_CLAUDE_BIN    override the `claude` binary (default: claude)
+#   CLAUDE_SESSION_TITLE_MODEL   default: haiku
+#   CLAUDE_SESSION_CACHE_DIR     default: ${XDG_CACHE_HOME:-~/.cache}/claude-session
 set -euo pipefail
 
 # Recursion guard: if we ever invoke claude and its Stop hook calls us back,
 # bail out immediately instead of generating a title-of-a-title.
-[ "${CPROJ_TITLE_GEN:-0}" = "1" ] && exit 0
+[ "${CLAUDE_SESSION_TITLE_GEN:-0}" = "1" ] && exit 0
 
-CLAUDE_BIN="${CPROJ_CLAUDE_BIN:-claude}"
-MODEL="${CPROJ_TITLE_MODEL:-haiku}"
-CACHE_DIR="${CPROJ_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/cproj}"
+CLAUDE_BIN="${CLAUDE_SESSION_CLAUDE_BIN:-claude}"
+MODEL="${CLAUDE_SESSION_TITLE_MODEL:-haiku}"
+CACHE_DIR="${CLAUDE_SESSION_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/claude-session}"
 CACHE_FILE="$CACHE_DIR/titles.tsv"
 TITLE_GEN_CWD="$CACHE_DIR/title-gen"
 mkdir -p "$CACHE_DIR" "$TITLE_GEN_CWD"
@@ -33,7 +33,7 @@ command -v "$CLAUDE_BIN" >/dev/null || exit 0
 if [ $# -ge 1 ]; then
   FILE="$1"
 else
-  [ -t 0 ] && { echo "cproj-title: need a file arg or JSON on stdin" >&2; exit 2; }
+  [ -t 0 ] && { echo "claude-session-title: need a file arg or JSON on stdin" >&2; exit 2; }
   payload=$(cat)
   FILE=$(printf '%s' "$payload" | jq -r '.transcript_path // empty')
 fi
@@ -74,10 +74,10 @@ $SNIPPET"
 
 # Run from an isolated cwd so we don't pick up any project's CLAUDE.md or
 # settings. --no-session-persistence keeps this invocation out of
-# ~/.claude/projects/. CPROJ_TITLE_GEN=1 short-circuits recursion.
+# ~/.claude/projects/. CLAUDE_SESSION_TITLE_GEN=1 short-circuits recursion.
 title=$(
   cd "$TITLE_GEN_CWD"
-  CPROJ_TITLE_GEN=1 "$CLAUDE_BIN" \
+  CLAUDE_SESSION_TITLE_GEN=1 "$CLAUDE_BIN" \
     -p --no-session-persistence --model "$MODEL" \
     --output-format text \
     "$PROMPT" 2>/dev/null

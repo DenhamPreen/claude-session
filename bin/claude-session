@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# cproj — fuzzy picker over Claude Code sessions, grouped by recency.
-# https://github.com/denhampreen/cproj
+# claude-session — fuzzy picker over Claude Code sessions, grouped by recency.
+# https://github.com/denhampreen/claude-session
 #
 # Reads ~/.claude/projects/*/*.jsonl, shows Today/Yesterday/This week/Older,
 # and resumes the selected session via `claude --resume`.
 #
-# Usage: cproj [-y|--yolo] [-T|--no-titles] [filter]
+# Usage: claude-session [-y|--yolo] [-T|--no-titles] [filter]
 #   filter          substring match against project cwd (optional)
 #   -y, --yolo      add --dangerously-skip-permissions when resuming
 #   -T, --no-titles disable AI title lookup/generation for this run
@@ -13,21 +13,21 @@
 #   -V, --version
 #
 # Env:
-#   CPROJ_SKIP_PERMISSIONS=1    same as --yolo (persistent opt-in)
-#   CPROJ_CLAUDE_BIN=claude     override the claude binary name/path
-#   CPROJ_PROJECTS_DIR          override ~/.claude/projects
-#   CPROJ_TITLE_MODEL           title generator model (default: haiku)
-#   CPROJ_CACHE_DIR             title cache location
+#   CLAUDE_SESSION_SKIP_PERMISSIONS=1    same as --yolo (persistent opt-in)
+#   CLAUDE_SESSION_CLAUDE_BIN=claude     override the claude binary name/path
+#   CLAUDE_SESSION_PROJECTS_DIR          override ~/.claude/projects
+#   CLAUDE_SESSION_TITLE_MODEL           title generator model (default: haiku)
+#   CLAUDE_SESSION_CACHE_DIR             title cache location
 # AI-generated titles are produced via the local `claude` CLI (subscription
 # auth) in background after each run — no API key required.
 set -euo pipefail
 
-VERSION="0.2.0"
-PROJECTS_DIR="${CPROJ_PROJECTS_DIR:-$HOME/.claude/projects}"
-CLAUDE_BIN="${CPROJ_CLAUDE_BIN:-claude}"
-CACHE_DIR="${CPROJ_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/cproj}"
+VERSION="0.3.0"
+PROJECTS_DIR="${CLAUDE_SESSION_PROJECTS_DIR:-$HOME/.claude/projects}"
+CLAUDE_BIN="${CLAUDE_SESSION_CLAUDE_BIN:-claude}"
+CACHE_DIR="${CLAUDE_SESSION_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/claude-session}"
 CACHE_FILE="$CACHE_DIR/titles.tsv"
-YOLO="${CPROJ_SKIP_PERMISSIONS:-0}"
+YOLO="${CLAUDE_SESSION_SKIP_PERMISSIONS:-0}"
 USE_TITLES=1
 FILTER=""
 
@@ -36,21 +36,21 @@ usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help)      usage; exit 0 ;;
-    -V|--version)   echo "cproj $VERSION"; exit 0 ;;
+    -V|--version)   echo "claude-session $VERSION"; exit 0 ;;
     -y|--yolo)      YOLO=1; shift ;;
     -T|--no-titles) USE_TITLES=0; shift ;;
     --)             shift; FILTER="${1:-}"; break ;;
-    -*)             echo "cproj: unknown flag: $1" >&2; exit 2 ;;
+    -*)             echo "claude-session: unknown flag: $1" >&2; exit 2 ;;
     *)              FILTER="$1"; shift ;;
   esac
 done
 
-need() { command -v "$1" >/dev/null || { echo "cproj: '$1' not found on PATH." >&2; exit 1; }; }
+need() { command -v "$1" >/dev/null || { echo "claude-session: '$1' not found on PATH." >&2; exit 1; }; }
 need jq
 need fzf
 need "$CLAUDE_BIN"
 
-[ -d "$PROJECTS_DIR" ] || { echo "cproj: no projects dir at $PROJECTS_DIR" >&2; exit 1; }
+[ -d "$PROJECTS_DIR" ] || { echo "claude-session: no projects dir at $PROJECTS_DIR" >&2; exit 1; }
 mkdir -p "$CACHE_DIR"; : >> "$CACHE_FILE"
 
 # Portable date.
@@ -90,16 +90,16 @@ entries=$(build_entries | sort -r)
 if [ -n "$FILTER" ]; then
   entries=$(printf '%s\n' "$entries" | awk -F'\t' -v f="$FILTER" 'index($2, f)')
 fi
-[ -n "$entries" ] || { echo "cproj: no sessions found${FILTER:+ matching \"$FILTER\"}." >&2; exit 1; }
+[ -n "$entries" ] || { echo "claude-session: no sessions found${FILTER:+ matching \"$FILTER\"}." >&2; exit 1; }
 
 # Path to the title generator (same dir as this script).
-TITLE_BIN="$(cd "$(dirname "$0")" && pwd)/cproj-title"
+TITLE_BIN="$(cd "$(dirname "$0")" && pwd)/claude-session-title"
 
 # Enrich entries with cached titles in one awk pass. Awk loads the cache in
 # BEGIN, then for each entry: emits the display row to stdout, and emits any
 # stale (sid, file) pair to stderr for background regeneration. Avoids bash 4
 # associative arrays so this runs on macOS stock bash 3.2.
-stale_file=$(mktemp -t cproj.XXXXXX)
+stale_file=$(mktemp -t claude-session.XXXXXX)
 trap 'rm -f "$stale_file"' EXIT
 
 enriched=$(printf '%s\n' "$entries" | awk -F'\t' -v OFS='\t' \
@@ -154,7 +154,7 @@ selected=$(printf '%s\n' "$formatted" | fzf \
 sid=$(printf '%s' "$selected" | awk -F'\t' '{print $2}')
 cwd=$(printf '%s' "$selected" | awk -F'\t' '{print $3}')
 
-[ -d "$cwd" ] || { echo "cproj: project cwd no longer exists: $cwd" >&2; exit 1; }
+[ -d "$cwd" ] || { echo "claude-session: project cwd no longer exists: $cwd" >&2; exit 1; }
 cd "$cwd"
 
 args=(--resume "$sid")
